@@ -1394,7 +1394,9 @@ public class Constants {
     public static final String METHOD_V5_SUBMIT_ASSESSMENT_ASYNC = "AssessmentServiceV5Impl.submitAssessmentAsync";
     public static final String METHOD_V5_SUBMIT_ASSESSMENT_ASYNC_V6 = "AssessmentServiceV5Impl.submitAssessmentAsyncV6";
     public static final String TABLE_USER_ASSESSMENT_FAILED_AUDIT = "user_assessment_failed_audit";
-    
+
+    public static final String REDIS_PONG_RESPONSE = "PONG";
+
     private Constants() {
         throw new IllegalStateException("Utility class");
     }

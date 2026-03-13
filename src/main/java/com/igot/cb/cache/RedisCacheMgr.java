@@ -253,4 +253,12 @@ public class RedisCacheMgr {
             return null;
         }
     }
+    public boolean isRedisHealthy() {
+        try (Jedis jedis = jedisPool.getResource()) {
+            return Constants.REDIS_PONG_RESPONSE.equalsIgnoreCase(jedis.ping());
+        } catch (Exception e) {
+            logger.error("Redis health check failed", e);
+            return false;
+        }
+    }
 }

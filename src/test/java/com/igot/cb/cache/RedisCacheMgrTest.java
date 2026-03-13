@@ -457,4 +457,28 @@ class RedisCacheMgrTest {
         Set<String> result = redisCacheMgr.getSetFromCacheAsCommaSeparated("key");
         assertNull(result);
     }
+
+    @Test
+    void isRedisHealthy_ShouldReturnTrue_WhenPingSuccessful() {
+
+        when(jedisPool.getResource()).thenReturn(jedis);
+        when(jedis.ping()).thenReturn(Constants.REDIS_PONG_RESPONSE);
+
+        boolean result = redisCacheMgr.isRedisHealthy();
+
+        assertTrue(result);
+
+        verify(jedis).ping();
+        verify(jedis).close();
+    }
+
+    @Test
+    void isRedisHealthy_ShouldReturnFalse_WhenExceptionOccurs() {
+
+        when(jedisPool.getResource()).thenThrow(new RuntimeException("Redis Down"));
+
+        boolean result = redisCacheMgr.isRedisHealthy();
+
+        assertFalse(result);
+    }
 }
