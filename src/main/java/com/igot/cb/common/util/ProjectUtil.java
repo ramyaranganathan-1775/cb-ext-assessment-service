@@ -27,4 +27,13 @@ public class ProjectUtil {
         response.setResponseCode(responseCode);
     }
 
+    public static Map<String, Object> createDefaultMapResponse(String api, String err, String errMsg) {
+        Map<String, Object> response = new HashMap<>();
+        response.put(Constants.HEALTHY, Constants.TRUE);
+        response.put(Constants.NAME, api);
+        response.put(Constants.ERR, err != null ? err : "");
+        response.put(Constants.ERROR_MESSAGE, errMsg != null ? errMsg : "");
+        return response;
+    }
+
 }

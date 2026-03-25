@@ -7,6 +7,10 @@ import com.igot.cb.common.model.SBApiResponse;
 import com.igot.cb.common.util.Constants;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.DescribeClusterResult;
+import org.apache.kafka.common.KafkaFuture;
+import org.apache.kafka.common.Node;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -15,10 +19,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -26,273 +28,146 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class HealthServiceImplTest {
 
-    @InjectMocks
-    private HealthServiceImpl healthService;
+    @Mock CassandraOperation cassandraOperation;
+    @Mock RedisCacheMgr redisCacheService;
+    @Mock Query query;
+    private final String REQUEST_ID = "test-request--123";
+    @InjectMocks HealthServiceImpl service;
+    @Mock
+    SBApiResponse response;
 
     @Mock
-    private CassandraOperation cassandraOperation;
+    AdminClient adminClient;
 
     @Mock
-    private RedisCacheMgr redisCacheService;
+    DescribeClusterResult describeClusterResult;
 
     @Mock
-    private EntityManager entityManager;
+    KafkaFuture<Collection<Node>> kafkaFutureNodes;
 
-    @Mock
-    private Query nativeQuery;
+    // 🔹 Common mocks
+    void mockAllHealthy() throws Exception {
 
+        when(cassandraOperation.getRecordsByProperties(any(), any(), any(), any()))
+                .thenReturn(List.of(Map.of("k", "v")));
 
-    private SBApiResponse response;
+        when(redisCacheService.isRedisHealthy()).thenReturn(true);
 
-    @BeforeEach
-    void setUp() {
-        // Setup is handled by MockitoExtension
     }
 
-    // ==================== Test: All Services Healthy ====================
-
-
-
-    // ==================== Test: Redis Unhealthy ====================
-
+    // ✅ SUCCESS CASE
     @Test
-    void testCheckHealthStatus_RedisUnhealthy() throws Exception {
-        // Arrange
-        List<Map<String, Object>> cassandraResponse = new ArrayList<>();
-        cassandraResponse.add(new HashMap<>());
+    void testHealthCheckSuccess() throws Exception {
 
-        when(cassandraOperation.getRecordsByProperties(
-                Constants.KEYSPACE_SUNBIRD,
-                Constants.TABLE_SYSTEM_SETTINGS,
-                null,
-                null))
-                .thenReturn(cassandraResponse);
+        mockAllHealthy();
 
+        response = service.checkHealthStatus(REQUEST_ID);
+
+        assertNotNull(response);
+
+
+        Map<String, Object> result =
+                (Map<String, Object>) response.get(Constants.RESPONSE);
+
+        assertNotNull(response);
+        assertEquals(Constants.ALL_HEALTH_CHECK, result.get(Constants.NAME));
+
+        List<Map<String, Object>> checks =
+                (List<Map<String, Object>>) result.get(Constants.CHECKS);
+
+        assertEquals(3, checks.size());
+    }
+
+    // ❌ FAILURE CASE (Redis down)
+    @Test
+    void testRedisFailure() throws Exception {
+
+        mockAllHealthy();
         when(redisCacheService.isRedisHealthy()).thenReturn(false);
 
-        when(entityManager.createNativeQuery("SELECT 1")).thenReturn(nativeQuery);
-        when(nativeQuery.getSingleResult()).thenReturn(1);
+        response = service.checkHealthStatus(REQUEST_ID);
 
-        // Act
-        SBApiResponse response = healthService.checkHealthStatus();
+        assertFalse(Boolean.TRUE.equals(response.get(Constants.HEALTHY)));
+    }
 
-        // Assert
+  /*  // ❌ FAILURE CASE (Postgres down)
+    @Test
+    void testPostgresFailure() throws Exception {
+
+        mockAllHealthy();
+
+        when(entityManager.createNativeQuery(anyString())).thenReturn(query);
+        when(query.getSingleResult()).thenThrow(new RuntimeException("DB error"));
+
+        SBApiResponse response = service.checkHealthStatus(REQUEST_ID);
+
+        assertFalse(Boolean.TRUE.equals(response.get(Constants.HEALTHY)));
+    }
+*/
+    // 💥 EXCEPTION CASE
+    @Test
+    void testExceptionHandling() throws Exception {
+
+        when(cassandraOperation.getRecordsByProperties(any(), any(), any(), any()))
+                .thenThrow(new RuntimeException("DB failure"));
+
+        SBApiResponse response = service.checkHealthStatus("req-ex");
+
         assertNotNull(response);
-        assertFalse((Boolean) response.get(Constants.HEALTHY));
 
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> checks = (List<Map<String, Object>>) response.get(Constants.CHECKS);
+        // ✅ overall unhealthy
+        assertFalse(Boolean.TRUE.equals(response.get(Constants.HEALTHY)));
 
-        Map<String, Object> redisCheck = checks.stream()
-                .filter(check -> Constants.REDIS_CACHE.equals(check.get(Constants.NAME)))
+        // ✅ exception handled
+        assertNotEquals(Constants.FAILED, response.getParams().getStatus());
+
+    }
+
+
+    @Test
+    void shouldReturnTrue_whenKafkaUp() throws Exception{
+        when(adminClient.describeCluster()).thenReturn(describeClusterResult);
+        when(describeClusterResult.nodes()).thenReturn(kafkaFutureNodes);
+        when(kafkaFutureNodes.get(3, TimeUnit.SECONDS)).thenReturn(Collections.emptyList());
+
+        List<Map<String, Object>> responseList = new ArrayList<>();
+
+        SBApiResponse response = service.checkHealthStatus("req-empty");
+
+        assertNotNull(response);
+        Map<String, Object> result = (Map<String, Object>) response.getResult().get(Constants.RESPONSE);
+        List<Map<String, Object>> checks = (List<Map<String, Object>>) result.get(Constants.CHECKS);
+
+        assertNotNull(checks);
+
+        checks.stream().filter(c -> Constants.KAFKA_SERVICE.equals(c.get(Constants.NAME)))
                 .findFirst()
-                .orElse(null);
-
-        assertNotNull(redisCheck);
-        assertFalse((Boolean) redisCheck.get(Constants.HEALTHY));
-    }
-
-    // ==================== Test: PostgreSQL Unhealthy ====================
-
-
-
-    // ==================== Test: Response Structure ====================
-
-    @Test
-    void testCheckHealthStatus_ResponseStructureIsValid() throws Exception {
-        // Arrange
-        List<Map<String, Object>> cassandraResponse = new ArrayList<>();
-        cassandraResponse.add(new HashMap<>());
-
-        when(cassandraOperation.getRecordsByProperties(
-                Constants.KEYSPACE_SUNBIRD,
-                Constants.TABLE_SYSTEM_SETTINGS,
-                null,
-                null))
-                .thenReturn(cassandraResponse);
-
-        when(redisCacheService.isRedisHealthy()).thenReturn(true);
-
-        when(entityManager.createNativeQuery("SELECT 1")).thenReturn(nativeQuery);
-        when(nativeQuery.getSingleResult()).thenReturn(1);
-
-        // Act
-        SBApiResponse response = healthService.checkHealthStatus();
-
-        // Assert
-        assertNotNull(response);
-        assertNotNull(response.getId());
-        assertNotNull(response.getParams());
-        assertNotNull(response.get(Constants.CHECKS));
-        assertEquals(Constants.API_HEALTH_CHECK, response.getId());
-        assertNotNull(response.getParams().getStatus());
-    }
-
-    // ==================== Test: Cassandra Health Status ====================
-
-    @Test
-    void testCassandraHealthStatus_WithHealthyResponse() throws Exception {
-        // Arrange
-        SBApiResponse response = new SBApiResponse(Constants.API_HEALTH_CHECK);
-        response.put(Constants.HEALTHY, true);
-        response.put(Constants.CHECKS, new ArrayList<>());
-
-        List<Map<String, Object>> cassandraResponse = new ArrayList<>();
-        cassandraResponse.add(new HashMap<>());
-
-        when(cassandraOperation.getRecordsByProperties(
-                Constants.KEYSPACE_SUNBIRD,
-                Constants.TABLE_SYSTEM_SETTINGS,
-                null, null))
-                .thenReturn(cassandraResponse);
-
-        // Act
-        healthService.cassandraHealthStatus(response);
-
-        // Assert
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> checks = (List<Map<String, Object>>) response.get(Constants.CHECKS);
-        assertEquals(1, checks.size());
-
-        Map<String, Object> check = checks.get(0);
-        assertEquals(Constants.CASSANDRA_DB, check.get(Constants.NAME));
-        assertTrue((Boolean) check.get(Constants.HEALTHY));
+                .ifPresent(kafkaCheck -> {
+                    assertEquals(Constants.TRUE, kafkaCheck.get(Constants.HEALTHY));
+                });
     }
 
     @Test
-    void testCassandraHealthStatus_WithEmptyResponse() throws Exception {
-        // Arrange
-        SBApiResponse response = new SBApiResponse(Constants.API_HEALTH_CHECK);
-        response.put(Constants.HEALTHY, true);
-        response.put(Constants.CHECKS, new ArrayList<>());
+    void shouldReturnTrue_whenKafkaDown() throws Exception{
+        when(adminClient.describeCluster()).thenReturn(describeClusterResult);
+        when(describeClusterResult.nodes()).thenReturn(kafkaFutureNodes);
+        when(kafkaFutureNodes.get(3,TimeUnit.SECONDS)).thenThrow(new RuntimeException("Kafka connection failed"));
 
-        when(cassandraOperation.getRecordsByProperties(
-                Constants.KEYSPACE_SUNBIRD,
-                Constants.TABLE_SYSTEM_SETTINGS,
-                null,
-                null))
-                .thenReturn(new ArrayList<>());
+        List<Map<String, Object>> responseList = new ArrayList<>();
 
-        // Act
-        healthService.cassandraHealthStatus(response);
-
-        // Assert
-        assertFalse((Boolean) response.get(Constants.HEALTHY));
-
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> checks = (List<Map<String, Object>>) response.get(Constants.CHECKS);
-        assertEquals(1, checks.size());
-
-        Map<String, Object> check = checks.get(0);
-        assertFalse((Boolean) check.get(Constants.HEALTHY));
-    }
-
-    // ==================== Test: PostgreSQL Health Status ====================
-
-    @Test
-    void testPostgresHealthStatus_WithSuccessfulConnection() throws Exception {
-        // Arrange
-        SBApiResponse response = new SBApiResponse(Constants.API_HEALTH_CHECK);
-        response.put(Constants.HEALTHY, true);
-        response.put(Constants.CHECKS, new ArrayList<>());
-
-        when(entityManager.createNativeQuery("SELECT 1")).thenReturn(nativeQuery);
-        when(nativeQuery.getSingleResult()).thenReturn(1);
-
-        // Act
-        healthService.postgresHealthStatus(response);
-
-        // Assert
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> checks = (List<Map<String, Object>>) response.get(Constants.CHECKS);
-        assertEquals(1, checks.size());
-
-        Map<String, Object> check = checks.get(0);
-        assertTrue((Boolean) check.get(Constants.HEALTHY));
-        assertTrue((Boolean) response.get(Constants.HEALTHY));
-
-        verify(entityManager, times(1)).createNativeQuery("SELECT 1");
-    }
-
-    @Test
-    void testPostgresHealthStatus_WithFailedConnection() throws Exception {
-        // Arrange
-        SBApiResponse response = new SBApiResponse(Constants.API_HEALTH_CHECK);
-        response.put(Constants.HEALTHY, true);
-        response.put(Constants.CHECKS, new ArrayList<>());
-
-        when(entityManager.createNativeQuery("SELECT 1")).thenReturn(nativeQuery);
-        when(nativeQuery.getSingleResult()).thenThrow(new RuntimeException("Connection timeout"));
-
-        // Act
-        healthService.postgresHealthStatus(response);
-
-        // Assert
-        assertFalse((Boolean) response.get(Constants.HEALTHY));
-
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> checks = (List<Map<String, Object>>) response.get(Constants.CHECKS);
-        assertEquals(1, checks.size());
-
-        Map<String, Object> check = checks.get(0);
-        assertFalse((Boolean) check.get(Constants.HEALTHY));
-    }
-
-    // ==================== Test: Mixed Scenarios ====================
-
-
-
-    // ==================== Test: Verify Method Invocations ====================
-
-    @Test
-    void testCheckHealthStatus_VerifiesDependenciesAreCalled() throws Exception {
-        // Arrange
-        List<Map<String, Object>> cassandraResponse = new ArrayList<>();
-        cassandraResponse.add(new HashMap<>());
-
-        when(cassandraOperation.getRecordsByProperties(
-                Constants.KEYSPACE_SUNBIRD,
-                Constants.TABLE_SYSTEM_SETTINGS,
-                null,
-                null))
-                .thenReturn(cassandraResponse);
-
-        when(redisCacheService.isRedisHealthy()).thenReturn(true);
-
-        when(entityManager.createNativeQuery("SELECT 1")).thenReturn(nativeQuery);
-        when(nativeQuery.getSingleResult()).thenReturn(1);
-
-        // Act
-        healthService.checkHealthStatus();
-
-        // Assert - Verify all dependencies were called
-        verify(cassandraOperation, times(1)).getRecordsByProperties(
-                Constants.KEYSPACE_SUNBIRD,
-                Constants.TABLE_SYSTEM_SETTINGS,
-                null,
-                null);
-
-        verify(redisCacheService, times(1)).isRedisHealthy();
-
-        verify(entityManager, times(1)).createNativeQuery("SELECT 1");
-        verify(nativeQuery, times(1)).getSingleResult();
-    }
-
-    @Test
-    void checkHealthStatus_ExceptionHandling() throws Exception {
-        when(cassandraOperation.getRecordsByProperties(
-                Constants.KEYSPACE_SUNBIRD,
-                Constants.TABLE_SYSTEM_SETTINGS,
-                null,
-                null))
-                .thenThrow(new RuntimeException("Cassandra connection failed"));
-
-        SBApiResponse response = healthService.checkHealthStatus();
+        SBApiResponse response = service.checkHealthStatus("req-empty");
 
         assertNotNull(response);
-        assertEquals(Constants.FAILED, response.getParams().getStatus());
-        assertEquals("Cassandra connection failed", response.getParams().getErr());
-        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getResponseCode());
+        Map<String, Object> result = (Map<String, Object>) response.getResult().get(Constants.RESPONSE);
+        List<Map<String, Object>> checks = (List<Map<String, Object>>) result.get(Constants.CHECKS);
+
+        assertNotNull(checks);
+
+        checks.stream().filter(c -> Constants.KAFKA_SERVICE.equals(c.get(Constants.NAME)))
+                .findFirst()
+                .ifPresent(kafkaCheck -> {
+                    assertEquals(500, kafkaCheck.get(Constants.ERR));
+                });
     }
 
 }

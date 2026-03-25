@@ -7,6 +7,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.UUID;
+
 
 @RestController
 public class HealthController {
@@ -16,7 +18,8 @@ public class HealthController {
 
     @GetMapping("/health")
     public ResponseEntity<SBApiResponse> healthCheck() throws Exception {
-        SBApiResponse response = healthService.checkHealthStatus();
+        String requestId = UUID.randomUUID().toString();
+        SBApiResponse response = healthService.checkHealthStatus(requestId);
         return new ResponseEntity<>(response, response.getResponseCode());
     }
 }

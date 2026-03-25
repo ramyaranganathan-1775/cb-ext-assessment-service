@@ -6,6 +6,6 @@ import com.igot.cb.common.model.SBApiResponse;
 
 public interface HealthService {
 
-    SBApiResponse checkHealthStatus() throws Exception;
+    SBApiResponse checkHealthStatus(String requestId) throws Exception;
 
 }

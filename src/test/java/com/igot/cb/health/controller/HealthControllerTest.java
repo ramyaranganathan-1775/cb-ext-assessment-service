@@ -29,14 +29,14 @@ class HealthControllerTest {
         SBApiResponse response = new SBApiResponse();
         response.setResponseCode(HttpStatus.OK);
 
-        when(healthService.checkHealthStatus()).thenReturn(response);
+        when(healthService.checkHealthStatus(any())).thenReturn(response);
 
         ResponseEntity<SBApiResponse> result = healthController.healthCheck();
 
         assertEquals(HttpStatus.OK, result.getStatusCode());
         assertEquals(response, result.getBody());
 
-        verify(healthService, times(1)).checkHealthStatus();
+        verify(healthService, times(1)).checkHealthStatus(any());
     }
 
 

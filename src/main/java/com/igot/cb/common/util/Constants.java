@@ -1396,6 +1396,10 @@ public class Constants {
     public static final String TABLE_USER_ASSESSMENT_FAILED_AUDIT = "user_assessment_failed_audit";
 
     public static final String REDIS_PONG_RESPONSE = "PONG";
+    public static final String POSTGRES_DB = "Postgres Service";
+    public static final String ALL_HEALTH_CHECK = "Complete health check api";
+    public static final String ERR = "err";
+    public static final String KAFKA_SERVICE = "Kafka Service";
 
     private Constants() {
         throw new IllegalStateException("Utility class");
