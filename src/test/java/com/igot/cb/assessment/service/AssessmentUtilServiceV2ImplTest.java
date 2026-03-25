@@ -474,9 +474,11 @@ class AssessmentUtilServiceV2ImplTest {
         Map<String, Object> enrolment1 = new HashMap<>();
         enrolment1.put(Constants.STATUS, Constants.ASSESSMENT_STATUS_COMPLETED);
         enrolment1.put(Constants.COURSE_ID, "courseA");
+        enrolment1.put(Constants.ACTIVE, true);
         Map<String, Object> enrolment2 = new HashMap<>();
         enrolment2.put(Constants.STATUS, Constants.ASSESSMENT_STATUS_COMPLETED);
         enrolment2.put(Constants.COURSE_ID, "courseB");
+        enrolment2.put(Constants.ACTIVE, true);
 
         when(cassandraOperation.getRecordsByPropertiesWithoutFiltering(
                 anyString(), anyString(), anyMap(), anyList()))

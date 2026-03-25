@@ -1182,15 +1182,27 @@ public class AssessmentUtilServiceV2Impl implements AssessmentUtilServiceV2 {
 		propertyMap.put(Constants.COURSE_ID, courseIds);
 		List<Map<String, Object>> enrolments = cassandraOperation.getRecordsByPropertiesWithoutFiltering(
 				Constants.KEYSPACE_SUNBIRD_COURSES, Constants.TABLE_USER_ENROLMENT, propertyMap,
-				Arrays.asList(Constants.USER_ID_CONSTANT, Constants.COURSE_ID, Constants.STATUS));
-		if (CollectionUtils.isEmpty(enrolments) || enrolments.size() < courseIds.size()) {
+				Arrays.asList(Constants.USER_ID_CONSTANT, Constants.COURSE_ID, Constants.STATUS, Constants.ACTIVE));
+
+		// Filter out inactive enrollments - only consider enrollments where active is true
+		List<Map<String, Object>> activeEnrolments = new ArrayList<>();
+		if (!CollectionUtils.isEmpty(enrolments)) {
+			for (Map<String, Object> enrolment : enrolments) {
+				Object activeValue = enrolment.get(Constants.ACTIVE);
+				if (activeValue != null && (boolean) activeValue) {
+					activeEnrolments.add(enrolment);
+				}
+			}
+		}
+
+		if (CollectionUtils.isEmpty(activeEnrolments) || activeEnrolments.size() < courseIds.size()) {
 			logger.info(
-					"{} Failed to fetch enrolment list for userId: {}, courseIds: {}", Constants.PREFIX_VALIDATE_COMPLETED_COURSE,
+					"{} Failed to fetch active enrolment list for userId: {}, courseIds: {}", Constants.PREFIX_VALIDATE_COMPLETED_COURSE,
 					userId, courseIds);
 			return false;
 		}
 
-		for (Map<String, Object> enrolment : enrolments) {
+		for (Map<String, Object> enrolment : activeEnrolments) {
 			if (Constants.ASSESSMENT_STATUS_COMPLETED != (int) enrolment.get(Constants.STATUS)) {
 				logger.info("{} User: {}, not completed course: {}", Constants.PREFIX_VALIDATE_COMPLETED_COURSE,
 						userId, (String) enrolment.get(Constants.COURSE_ID));
@@ -1199,7 +1211,6 @@ public class AssessmentUtilServiceV2Impl implements AssessmentUtilServiceV2 {
 		}
 		return true;
 	}
-
 	@Override
 	public String readAssessmentRecord(String assessmentIdentifier, List<String> fields) {
 		Map<String, String> headers = new HashMap<>();

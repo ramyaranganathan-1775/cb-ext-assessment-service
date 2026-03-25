@@ -670,7 +670,7 @@ public class AssessmentServiceV4Impl implements AssessmentServiceV4 {
             result.put(Constants.ERROR_MESSAGE, Constants.ASSESSMENT_HIERARCHY_READ_FAILED);
             return result;
         }
-        result.put(Constants.SHUFFLE, String.valueOf(getShuffleFlagFromHierarchy(assessmentAllDetail, identifierList)));
+        result.put(Constants.SHUFFLE, String.valueOf(getShuffleFlagFromHierarchy(assessmentAllDetail)));
         String primaryCategory = (String) assessmentAllDetail.get(Constants.PRIMARY_CATEGORY);
         if (Constants.PRACTICE_QUESTION_SET
                 .equalsIgnoreCase(primaryCategory)||editMode) {
@@ -1150,44 +1150,21 @@ public class AssessmentServiceV4Impl implements AssessmentServiceV4 {
     }
 
     /**
-     * Extracts the shuffle flag from the hierarchy section that contains the requested questions.
-     * Matches the requested question identifiers against each section's children to find the
-     * owning section, then returns its shuffle configuration.
+     * Extracts the shuffle flag from the current assessment hierarchy object.
+     * Returns the shuffle configuration set at the assessment level.
      *
-     * @param assessmentAllDetail the complete assessment hierarchy containing sections with shuffle config
-     * @param identifierList      the list of question identifiers requested for this call
-     * @return the shuffle flag from the matching section, or true if no matching section is found
+     * @param assessmentAllDetail the complete assessment hierarchy containing shuffle config
+     * @return the shuffle flag from the assessment object, or true if not found or cannot be cast to Boolean
      */
-    private boolean getShuffleFlagFromHierarchy(Map<String, Object> assessmentAllDetail, List<String> identifierList) {
-        List<Map<String, Object>> sections =
-                (List<Map<String, Object>>) assessmentAllDetail.get(Constants.CHILDREN);
-        if (CollectionUtils.isEmpty(sections) || CollectionUtils.isEmpty(identifierList)) {
+    private boolean getShuffleFlagFromHierarchy(Map<String, Object> assessmentAllDetail) {
+        if (MapUtils.isEmpty(assessmentAllDetail)) {
             return true;
         }
-        Set<String> requestedIds = new HashSet<>(identifierList);
-        return sections.stream()
-                .filter(section -> sectionContainsAnyQuestion(section, requestedIds))
-                .findFirst()
-                .map(section -> section.get(Constants.SHUFFLE))
-                .map(Boolean.class::cast)
-                .orElse(true);
+        Object shuffleValue = assessmentAllDetail.get(Constants.SHUFFLE);
+        if (shuffleValue instanceof Boolean) {
+            return (Boolean) shuffleValue;
+        }
+        return true;
     }
 
-    /**
-     * Checks whether a given section contains any of the requested question identifiers.
-     *
-     * @param section      a section map from the assessment hierarchy
-     * @param requestedIds the set of question identifiers to match against
-     * @return true if any child of the section matches a requested identifier, false otherwise
-     */
-    private boolean sectionContainsAnyQuestion(Map<String, Object> section, Set<String> requestedIds) {
-        List<Map<String, Object>> children =
-                (List<Map<String, Object>>) section.get(Constants.CHILDREN);
-        if (CollectionUtils.isEmpty(children)) {
-            return false;
-        }
-        return children.stream()
-                .map(child -> (String) child.get(Constants.IDENTIFIER))
-                .anyMatch(requestedIds::contains);
-    }
 }
